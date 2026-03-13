@@ -237,14 +237,16 @@ python extract_frames.py output\video_20260313_153441.mp4 --format png
    - **Project Name**: 원하는 이름 입력 (예: `find-bottles`)
    - **Project Type**: `Object Detection` 선택
      - 세그멘테이션이 필요하면 `Instance Segmentation` 선택
-   - **What are you detecting?**: 감지할 물체 이름 입력 (예: `bottle`)
+   - **Annotation Group**: 감지할 물체 그룹 이름 입력 (예: `bottle`)
+   - **Tool**: `Traditional` 선택
+     - 이미지 업로드 제한 없음, 데이터셋 export 가능, 로컬 학습 후 `.pt` 파일 추출 가능
 5. **Create Project** 클릭
 
 ### 3-2. 이미지 업로드
 
 1. 프로젝트에 들어가면 이미지 업로드 화면이 나타납니다.
 2. Windows 파일 탐색기에서 `frames_video_...\` 폴더를 열고 이미지를 **드래그 앤 드롭**합니다.
-3. **무료 플랜은 한 번에 10장 제한**이므로 여러 번 나눠서 업로드합니다.
+3. Traditional 모드에서는 업로드 제한 없이 한 번에 여러 장 업로드 가능합니다.
 4. 업로드가 완료될 때까지 기다립니다.
 
 ### 3-3. 라벨링 (Annotation)
@@ -260,35 +262,9 @@ python extract_frames.py output\video_20260313_153441.mp4 --format png
 5. **Save** 를 클릭하고 다음 이미지로 넘어갑니다.
 6. 모든 이미지에 대해 반복합니다.
 
-#### 자동 라벨링 (Auto-Label)
-
-Roboflow의 Auto-Label 기능을 사용하면 자동으로 라벨링할 수 있습니다.
-
-1. 이미지 목록에서 **Auto-Label** 또는 **Run on all images** 버튼을 클릭합니다.
-2. 자동 라벨링이 완료되면 결과를 확인합니다.
-3. 잘못된 라벨이 있으면 수동으로 수정합니다.
-
-> **주의**: Auto-Label은 Roboflow **Rapid** 모델을 사용합니다.
-> Rapid 모델은 `.pt` 파일로 추출할 수 없으므로, 자체 모델이 필요하면 **Step 5에서 직접 학습**해야 합니다.
-
 ### 3-4. 데이터셋 버전 생성
 
-라벨링이 완료되면 데이터셋 버전을 생성합니다.
-
-1. 프로젝트 페이지에서 **Generate** 탭으로 이동합니다.
-2. 설정:
-   - **Train/Valid/Test Split**: 70% / 20% / 10% (권장)
-   - **Preprocessing**:
-     - Auto-Orient: 켜기
-     - Resize: 640x640
-   - **Augmentation** (데이터 증강, 선택):
-     - Flip: Horizontal
-     - Rotation: ±15°
-     - Brightness: ±15%
-3. **Generate** 를 클릭합니다.
-
-> **Augmentation이란?** 원본 이미지를 회전, 반전, 밝기 조절 등으로 변형하여
-> 학습 데이터를 늘리는 기법입니다. 이미지 수가 적을 때 특히 효과적입니다.
+라벨링이 완료되면 데이터셋 버전을 생성합니다. Roboflow 웹에서 **Generate** 탭이 보이면 거기서 생성하고, 보이지 않으면 Python API로 생성할 수 있습니다 (Step 4 참고).
 
 ---
 
@@ -313,7 +289,9 @@ https://app.roboflow.com/<워크스페이스>/<프로젝트>/<버전>
 - 프로젝트: `find-bottles`
 - 버전: `1`
 
-### 4-3. 데이터셋 다운로드
+### 4-3. 데이터셋 버전 생성 및 다운로드
+
+Roboflow 웹에서 Generate가 되지 않을 경우, Python API로 버전을 생성할 수 있습니다.
 
 ```bash
 cd ~/vision_dataset_tool
@@ -325,17 +303,34 @@ from roboflow import Roboflow
 API_KEY = "YOUR_API_KEY"           # Roboflow API Key
 WORKSPACE = "YOUR_WORKSPACE"       # 워크스페이스 이름
 PROJECT = "YOUR_PROJECT"           # 프로젝트 이름
-VERSION = 1                        # 버전 번호
 
 rf = Roboflow(api_key=API_KEY)
 project = rf.workspace(WORKSPACE).project(PROJECT)
-version = project.version(VERSION)
+
+# 데이터셋 버전이 없으면 생성
+versions = project.get_version_information()
+if len(versions) == 0:
+    print("데이터셋 버전 생성 중...")
+    project.generate_version(settings={
+        "preprocessing": {
+            "auto-orient": True,
+            "resize": {"width": 640, "height": 640, "format": "Stretch to"}
+        },
+        "augmentation": {}
+    })
+    print("버전 생성 완료!")
+
+# 다운로드
+version = project.version(1)
 dataset = version.download("yolov8")
 
 print(f"\n다운로드 완료: {dataset.location}")
 print(f"data.yaml 경로: {dataset.location}/data.yaml")
 EOF
 ```
+
+> **참고**: Roboflow에서 데이터셋을 다운로드하면 train/valid/test 분할 없이 전부 train에 들어갈 수 있습니다.
+> 그 경우 학습 전에 수동으로 분할해야 합니다. (아래 Step 5 참고)
 
 다운로드가 완료되면 아래와 같은 폴더 구조가 생성됩니다:
 
@@ -357,6 +352,48 @@ EOF
 
 ## Step 5: YOLO 모델 학습 (Linux/WSL2)
 
+### 5-0. (필요 시) 데이터셋 분할
+
+다운로드한 데이터셋에 `valid/`, `test/` 폴더가 비어있거나 없으면, 학습 전에 수동 분할이 필요합니다.
+
+```bash
+cd ~/vision_dataset_tool
+
+python3 << 'PYEOF'
+import os, random, shutil
+
+DATASET_DIR = "<다운로드된 폴더>"  # 예: "bottle_detection-1"
+
+random.seed(42)
+images = sorted(os.listdir(f"{DATASET_DIR}/train/images"))
+random.shuffle(images)
+
+n = len(images)
+n_valid = max(1, int(n * 0.2))
+n_test = max(1, int(n * 0.1))
+
+for split in ["valid", "test"]:
+    os.makedirs(f"{DATASET_DIR}/{split}/images", exist_ok=True)
+    os.makedirs(f"{DATASET_DIR}/{split}/labels", exist_ok=True)
+
+for img in images[:n_valid]:
+    label = img.rsplit(".", 1)[0] + ".txt"
+    shutil.move(f"{DATASET_DIR}/train/images/{img}", f"{DATASET_DIR}/valid/images/{img}")
+    if os.path.exists(f"{DATASET_DIR}/train/labels/{label}"):
+        shutil.move(f"{DATASET_DIR}/train/labels/{label}", f"{DATASET_DIR}/valid/labels/{label}")
+
+for img in images[n_valid:n_valid + n_test]:
+    label = img.rsplit(".", 1)[0] + ".txt"
+    shutil.move(f"{DATASET_DIR}/train/images/{img}", f"{DATASET_DIR}/test/images/{img}")
+    if os.path.exists(f"{DATASET_DIR}/train/labels/{label}"):
+        shutil.move(f"{DATASET_DIR}/train/labels/{label}", f"{DATASET_DIR}/test/labels/{label}")
+
+print(f"train: {len(os.listdir(f'{DATASET_DIR}/train/images'))}장")
+print(f"valid: {len(os.listdir(f'{DATASET_DIR}/valid/images'))}장")
+print(f"test: {len(os.listdir(f'{DATASET_DIR}/test/images'))}장")
+PYEOF
+```
+
 ### 5-1. 학습 실행
 
 ```bash
@@ -368,7 +405,7 @@ python3 train_yolo.py --data <다운로드된 폴더>/data.yaml --epochs 100
 
 실제 예시:
 ```bash
-python3 train_yolo.py --data Find-bottles-2-2/data.yaml --epochs 100
+python3 train_yolo.py --data bottle_detection-1/data.yaml --epochs 100
 ```
 
 ### 5-2. 학습 옵션
@@ -560,9 +597,8 @@ vision_dataset_tool/
 
 | 문제 | 원인 | 해결 |
 |------|------|------|
-| 한 번에 10장만 업로드 가능 | 무료 플랜 제한 | 여러 번 나눠서 업로드 |
-| `.pt` 파일 다운로드 안 됨 | Rapid 모델은 추출 불가 | 데이터셋 export 후 로컬에서 학습 (Step 5) |
-| 데이터셋 버전이 없음 | Generate를 아직 안 함 | Roboflow에서 데이터셋 버전 생성 필요 |
+| 데이터셋 버전이 없음 | Generate를 아직 안 함 | Python API로 버전 생성 (Step 4-3 참고) |
+| valid/test 폴더가 비어있음 | Roboflow에서 분할 안 됨 | 수동 분할 스크립트 실행 (Step 5-0 참고) |
 
 ### 학습 및 추론
 
