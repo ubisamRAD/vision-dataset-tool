@@ -323,26 +323,36 @@ https://app.roboflow.com/<워크스페이스>/<프로젝트>/<버전>
 
 ### 5-3. 데이터셋 다운로드
 
+다운로드 스크립트를 사용합니다:
+
 ```bash
 cd ~/vision_dataset_tool
 
-python3 << 'EOF'
-from roboflow import Roboflow
-
-# 아래 값을 본인 정보로 변경하세요
-API_KEY = "YOUR_API_KEY"           # Roboflow API Key
-WORKSPACE = "YOUR_WORKSPACE"       # 워크스페이스 이름
-PROJECT = "YOUR_PROJECT"           # 프로젝트 이름
-VERSION = 1                        # 버전 번호
-
-rf = Roboflow(api_key=API_KEY)
-project = rf.workspace(WORKSPACE).project(PROJECT)
-dataset = project.version(VERSION).download("yolov8")
-
-print(f"\n다운로드 완료: {dataset.location}")
-print(f"data.yaml 경로: {dataset.location}/data.yaml")
-EOF
+python3 download_dataset.py \
+  --api-key YOUR_API_KEY \
+  --workspace YOUR_WORKSPACE \
+  --project YOUR_PROJECT \
+  --version 1
 ```
+
+실제 예시:
+```bash
+python3 download_dataset.py \
+  --api-key i9lpWltVBjTZy5j9KMEN \
+  --workspace pen-detect-vakdp \
+  --project find_figure \
+  --version 1
+```
+
+#### 옵션
+
+| 옵션 | 설명 | 기본값 |
+|------|------|--------|
+| `--api-key` | Roboflow API Key | (필수) |
+| `--workspace` | 워크스페이스 이름 | (필수) |
+| `--project` | 프로젝트 이름 | (필수) |
+| `--version` | 데이터셋 버전 번호 | 1 |
+| `--format` | 다운로드 포맷 | yolov8 |
 
 다운로드가 완료되면 아래와 같은 폴더 구조가 생성됩니다:
 
@@ -598,6 +608,7 @@ class YoloSegmentNode(Node):
 vision_dataset_tool/
 ├── capture_video.py      # [Windows] 웹캠 영상 촬영
 ├── extract_frames.py     # [Windows] 영상 → 이미지 프레임 추출
+├── download_dataset.py   # [Linux]   Roboflow 데이터셋 다운로드
 ├── train_yolo.py         # [Linux]   YOLO 모델 학습 (detect/segment)
 ├── test_yolo.py          # [Linux]   YOLO 모델 추론 테스트
 ├── requirements.txt      # Python 패키지 의존성
