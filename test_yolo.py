@@ -15,7 +15,19 @@ YOLO 모델 추론 테스트 스크립트
 
 import argparse
 import os
+import torch
 from ultralytics import YOLO
+
+
+def detect_device(requested: str) -> str:
+    """사용 가능한 최적 디바이스를 자동 감지한다."""
+    if requested:
+        return requested
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        return "xpu"
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
 
 
 def main():
@@ -30,18 +42,23 @@ def main():
                         help="결과 이미지 저장")
     parser.add_argument("--save-dir", type=str, default="test_results",
                         help="결과 저장 디렉토리 (기본: test_results)")
+    parser.add_argument("--device", type=str, default="",
+                        help="추론 디바이스 (기본: 자동감지 xpu>cuda>cpu)")
     args = parser.parse_args()
 
     if not os.path.isfile(args.model):
         print(f"[ERROR] 모델 파일을 찾을 수 없습니다: {args.model}")
         return
 
+    device = detect_device(args.device)
+
     print(f"[INFO] 모델: {args.model}")
     print(f"[INFO] 소스: {args.source}")
+    print(f"[INFO] 디바이스: {device}")
     print(f"[INFO] 신뢰도 임계값: {args.conf}")
 
     model = YOLO(args.model)
-    results = model(args.source, conf=args.conf, verbose=False)
+    results = model(args.source, conf=args.conf, device=device, verbose=False)
 
     total_detections = 0
     for i, r in enumerate(results):

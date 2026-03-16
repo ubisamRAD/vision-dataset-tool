@@ -14,7 +14,19 @@ YOLO 모델 학습 스크립트
 """
 
 import argparse
+import torch
 from ultralytics import YOLO
+
+
+def detect_device(requested: str) -> str:
+    """사용 가능한 최적 디바이스를 자동 감지한다."""
+    if requested:
+        return requested
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        return "xpu"
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
 
 
 def main():
@@ -34,6 +46,8 @@ def main():
                         help="배치 크기 (기본: 16)")
     parser.add_argument("--name", type=str, default="",
                         help="학습 실험 이름 (기본: 자동)")
+    parser.add_argument("--device", type=str, default="",
+                        help="학습 디바이스 (기본: 자동감지 xpu>cuda>cpu)")
     args = parser.parse_args()
 
     # 기본 모델 설정
@@ -43,9 +57,12 @@ def main():
         else:
             args.model = "yolov8n.pt"
 
+    device = detect_device(args.device)
+
     print(f"[INFO] 태스크: {args.task}")
     print(f"[INFO] 모델: {args.model}")
     print(f"[INFO] 데이터: {args.data}")
+    print(f"[INFO] 디바이스: {device}")
     print(f"[INFO] 에포크: {args.epochs}, 이미지 크기: {args.imgsz}, 배치: {args.batch}")
 
     model = YOLO(args.model)
@@ -55,15 +72,13 @@ def main():
         "epochs": args.epochs,
         "imgsz": args.imgsz,
         "batch": args.batch,
+        "device": device,
     }
 
     if args.name:
         train_args["name"] = args.name
 
-    if args.task == "segment":
-        results = model.train(**train_args)
-    else:
-        results = model.train(**train_args)
+    results = model.train(**train_args)
 
     print(f"\n[DONE] 학습 완료!")
     print(f"[INFO] best 모델: {model.trainer.best}")
